@@ -10,6 +10,8 @@ import (
 	"github.com/nblib/demo-grpc-client-go/clients/sample"
 	"github.com/nblib/demo-grpc-client-go/clients/common"
 	"fmt"
+	"io"
+	"time"
 )
 
 const address string = "localhost:50051"
@@ -107,11 +109,41 @@ func TestSamplePull(t *testing.T) {
 		log.Fatalf("did not pullLocationClient: %v", err)
 	}
 
-	for location, err := pullLocationClient.Recv(); err == nil; location, err = pullLocationClient.Recv() {
-		fmt.Println(location.GetLat(), location.GetLon())
+	for {
+		location, err := pullLocationClient.Recv()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			log.Fatalf("did not Recv: %v", err)
+		} else {
+			fmt.Println(location.GetLat(), location.GetLon())
+		}
 	}
+
+}
+//测试是否自动重连
+func TestInterruptConnect(t *testing.T) {
+	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
-		log.Fatalf("did not Recv: %v", err)
+		log.Fatalf("did not connect: %v", err)
+	}
+	defer conn.Close()
+
+	client := demo.NewDemoServiceClient(conn)
+	for {
+		time.Sleep(2 * time.Second)
+		result, err := client.CheckIfBlack(context.Background(), &demo.CheckIps{
+			Name: "testListAndMap",
+			Ips:  []string{"192.158.22.33", "10.169.2.121", "192.168.23.111"},
+		})
+		if err != nil {
+			log.Printf("check error: %v", err)
+			continue
+		}
+		results := result.GetResults()
+		for k, v := range results {
+			log.Printf("ip: %s, isBlack: %t", k, v)
+		}
 	}
 
 }
